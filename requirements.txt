@@ -1,7 +1,8 @@
-langchain
-langgraph
+langchain-core
 langchain-openai
+langgraph
 pandas
-python-dotenv
-ipython
-setuptools 
+langchain
+shutil
+langchain_community
+chromadb
