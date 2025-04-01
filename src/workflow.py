@@ -6,6 +6,7 @@ from src.nodes import (
 from src.tools import cancel_order
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.prebuilt import ToolNode
+from IPython.display import display, Image
 
 def create_workflow():
     # Create the workflow
@@ -51,5 +52,17 @@ def create_workflow():
     )
     workflow.add_edge("tools_2", "CancelOrder")
     workflow.add_edge("ProcessPayment", END)
+
+    graph = workflow.compile() 
+
+    # Generate the image
+    image_object = Image(graph.get_graph(xray=True).draw_mermaid_png())
+
+    # Get the image data
+    image_data = image_object.data
+
+    # Save the image data to a file
+    with open("langgraph_image.png", "wb") as f:
+        f.write(image_data)
     
-    return workflow.compile() 
+    return graph

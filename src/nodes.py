@@ -120,7 +120,7 @@ def generate_data_store():
   save_to_chroma(chunks) # Save the processed data to a data store
 
 
-def query_rag(state: MessagesState) -> Literal["tools_2", "end"]:
+def query_rag(state: MessagesState) -> MessagesState:
     """
     Query a Retrieval-Augmented Generation (RAG) system using Chroma database and OpenAI.
     Args:
@@ -142,11 +142,10 @@ def query_rag(state: MessagesState) -> Literal["tools_2", "end"]:
     results = db.similarity_search_with_relevance_scores(query_text, k=3)
 
     # Check if there are any matching results or if the relevance score is too low
-    if len(results) == 0 or results[0][1] < 0.5:
+    if len(results) == 0 or results[0][1] < 0.7:
         # Return a default response if no good results found
         return {
-            "response_text": "Sorry, I couldn't find any relevant information."
-            "end"
+            "response": "Sorry, I couldn't find any relevant information."
         }
 
     # Combine context from matching documents
@@ -162,9 +161,8 @@ def query_rag(state: MessagesState) -> Literal["tools_2", "end"]:
     # Generate response text based on the prompt
     response_text = model.invoke(prompt).content
     print(response_text)
-    
     return {
-        "formatted_response": response_text
+        "response": response_text
     }
 
 
@@ -192,7 +190,7 @@ def check_inventory(state: MessagesState) -> MessagesState:
 
     if inventory.get(item_id, {}).get("stock", 0) >= quantity:
         print("IN STOCK")
-        return {"status": "In Stock"}
+        return {"order_status": "In Stock"}
     return {"query":state,"order_status": "Out of Stock"}
 
 def compute_shipping(state: MessagesState) -> MessagesState:

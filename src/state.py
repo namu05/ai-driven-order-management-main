@@ -10,3 +10,4 @@ class State(TypedDict):
     payment_status: Optional[str]
     location: Optional[str]
     quantity: Optional[int] 
+    response: Optional[str]

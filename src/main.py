@@ -15,12 +15,12 @@ def main():
     
     # Test cancel order
     print("\nTesting Cancel Order:")
-    user_query = "I wish to cancel order_id 1000000"
-    for chunk in agent.stream(
-        {"messages": [("user", user_query)]},
-        stream_mode="values",
-    ):
-        chunk["messages"][-1].pretty_print()
+#     user_query = "I wish to cancel order_id 1000000"
+#     for chunk in agent.stream(
+#         {"messages": [("user", user_query)]},
+#         stream_mode="values",
+#     ):
+#         chunk["messages"][-1].pretty_print()
     
   #  Test place order
     print("\nTesting Place Order:")
@@ -30,12 +30,12 @@ def main():
         stream_mode="values",
     ):
         chunk["messages"][-1].pretty_print()
-    user_query = "What is my shipment time for order?"
-    for chunk in agent.stream(
-        {"messages": [("user", user_query)]},
-        stream_mode="values",
-    ):
-        chunk["messages"][-1].pretty_print()    
+    # user_query = "What is my shipment time for order?"
+    # for chunk in agent.stream(
+    #     {"messages": [("user", user_query)]},
+    #     stream_mode="values",
+    # ):
+    #     chunk["messages"][-1].pretty_print()
 
 if __name__ == "__main__":
     main() 
