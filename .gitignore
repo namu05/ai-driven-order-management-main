@@ -8,6 +8,7 @@ venv/
 *.pyc
 __pycache__/
 
+
 # Ignore other common files
 *.pyo
 *.pyd
