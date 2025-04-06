@@ -1,2 +1,16 @@
+# Ignore the virtual environment folder
+venv/
+
+# Ignore environment variable file
 .env
-.venv
+
+# Ignore the Python bytecode files
+*.pyc
+__pycache__/
+
+# Ignore other common files
+*.pyo
+*.pyd
+
+# Ignore the .venv folder if it exists (for others who might use this as a virtual environment name)
+.venv/
