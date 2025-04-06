@@ -3,6 +3,6 @@ langchain-openai
 langgraph
 pandas
 langchain
-shutil
 langchain_community
+langchain-chroma
 chromadb
