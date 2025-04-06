@@ -1,49 +1,82 @@
-name: Build, Tag, and Push Docker Image to ECR
+name: Deploy Application Docker Image to EC2 Instance
 
 on:
   push:
-    branches:
-      - main   # Change this to the branch you want to trigger the pipeline from
-
-env:
-  AWS_REGION: 'eu-north-1' # Change to your AWS region
-  IMAGE_NAME: 'latest'    # Default image name, this can be overridden in the workflow file
-  ECR_REPO: ${{ secrets.ECR_REPO }}    # ECR repository name (set in GitHub secrets)
-  IMAGE_TAG: ${{ github.sha }}          # Use the commit SHA as the default image tag
+    branches: 
+      - main
 
 jobs:
-  build_and_push:
+  Continuous-Integration:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the code from the repository
-      - name: Checkout code
+      # Step 1: Checkout the code
+      - name: Checkout
         uses: actions/checkout@v2
 
-      # Step 2: Set up AWS CLI and login to ECR
-      - name: Set up AWS CLI
+      # Step 2: Set up AWS credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # Step 3: Login to AWS ECR
-      - name: Login to Amazon ECR
-        run: |
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO }}
+      # Step 3: Log in to Amazon ECR
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        env:
+          AWS_REGION: eu-north-1
 
-      # Step 4: Build the Docker image
-      - name: Build Docker image
+      # Step 4: Build, Tag and Push Docker image
+      - name: Build, Tag and Push Docker image
+        id: build-image
+        env: 
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+          IMAGE_TAG: latest
         run: |
-          docker build -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
-      # Step 5: Tag the Docker image for the ECR repository
-      - name: Tag Docker image
-        run: |
-          docker tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} ${{ secrets.ECR_REPO }}:${{ env.IMAGE_TAG }}
+  Continuous-Deployment:
+    needs: Continuous-Integration
+    runs-on: self-hosted  # Ensure the EC2 instance is configured as a self-hosted runner
 
-      # Step 6: Push the Docker image to ECR
-      - name: Push Docker image to ECR
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Step 2: Set up AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      # Step 3: Log in to Amazon ECR
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        env:
+          AWS_REGION: eu-north-1
+          
+      # Step 4: Pull the Docker image from ECR and run it on EC2
+      - name: Pull Docker image from ECR and deploy
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+          IMAGE_TAG: latest
         run: |
-          docker push ${{ secrets.ECR_REPO }}:${{ env.IMAGE_TAG }}
+          # Ensure Docker is installed and running on the EC2 instance before proceeding
+          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker run -d -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            -e AWS_DEFAULT_REGION="${{ secrets.AWS_DEFAULT_REGION }}" \
+            -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            -p 8080:8080 \
+            $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
