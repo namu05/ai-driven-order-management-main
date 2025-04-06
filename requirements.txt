@@ -6,3 +6,5 @@ langchain
 langchain_community
 langchain-chroma
 chromadb
+ipython
+pypdf

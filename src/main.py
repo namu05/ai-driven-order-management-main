@@ -24,7 +24,7 @@ def main():
     
   #  Test place order
     print("\nTesting Place Order:")
-    user_query = "customer_id: customer_14 : I wish to place order for item_51 with order quantity as 4 and domestic"
+    user_query = "customer_id: David Brown : I wish to place order for item_28 with order quantity as 4 and domestic"
     for chunk in agent.stream(
         {"messages": [("user", user_query)]},
         stream_mode="values",
