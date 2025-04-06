@@ -29,14 +29,24 @@ jobs:
       # Build the Docker image
       - name: Build Docker image
         id: build-image
+        env: 
+            ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+            ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+            IMAGE_TAG: latest
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
 
       # Push Docker image to Amazon ECR
       - name: Push Docker image to Amazon ECR
         id: push-image
+        env:
+            ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+            ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+            IMAGE_TAG: latest        
         run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSTITORY:$IMAGE_TAG"          
+          
 
   Continous-Deployment:
     needs: Continous-Integration
@@ -60,10 +70,15 @@ jobs:
         
      # Pull the Docker image from ECR
       - name: Pull Docker image from ECR
+        env:
+            ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+            ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+            IMAGE_TAG: latest      
         run: |
-         docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-     # Run Docker container (Deployment)
-      - name: Run Docker container
-        run: |
-         docker run -d -p 8080:80 --name my-running-container $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG        
+          docker run -d -e AWS_ACCESS_KEY_ID="${{ 
+          secrets.AWS_ACCESS_KEY_ID }}" -e 
+          AWS_SECRET_ACCESS_KEY="${{ secrets. AWS_SECRET_ACCESS_KEY }}" -e 
+          AWS_DEFAULT_REGION="${{ secrets. AWS_DEFAULT_REGION }}" -e 
+          OPENAI_API_KEY ="${{ secrets.OPENAI_API_KEY }} 
+          " -p 8080:8080 "${{ steps.login-ecr.outputs.
+          registry }}"/"${{ secrets.ECR_REPO }}":latest
