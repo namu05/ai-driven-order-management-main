@@ -8,3 +8,4 @@ langchain-chroma
 chromadb
 ipython
 pypdf
+mysql-connector-python

@@ -11,7 +11,6 @@ from src.tools import cancel_order
 from src.config import llm
 from src.state import State
 
-from langchain.document_loaders.pdf import PyPDFDirectoryLoader # Importing PDF loader from Langchain
 from langchain.text_splitter import RecursiveCharacterTextSplitter # Importing text splitter from Langchain
 from langchain_openai import OpenAIEmbeddings # Importing OpenAI embeddings from Langchain
 from langchain.schema import Document # Importing Document schema from Langchain
@@ -31,7 +30,7 @@ DATABASE_URL = "mysql+mysqlconnector://root:@localhost:3306/orders"
 # Set up the SQLAlchemy engine
 engine = create_engine(DATABASE_URL)
 
-# Base class for declarative models
+# # Base class for declarative models
 Base = declarative_base()
 
 # Define the Inventory model
@@ -39,21 +38,31 @@ class Inventory(Base):
     __tablename__ = "inventory"
     
     # Define the columns
-    item_id = Column(Integer, primary_key=True)  # item_id as primary key
-    category = Column(String)  # category as a string
-    stock = Column(Integer)  # stock as an integer
-    weight = Column(Float)  # weight as a float (decimal)
-    price = Column(Float)  # price as a float (decimal)
+    item_id = Column(Integer, primary_key=True) 
+    category = Column(String)  
+    stock = Column(Integer) 
+    weight = Column(Float)  
+    price = Column(Float) 
 
 # Define the Customer model
 class Customer(Base):
     __tablename__ = "customers"
     
     # Define the columns
-    customer_id = Column(Integer, primary_key=True)  # customer_id as primary key
-    name = Column(String)  # name as a string
-    location = Column(String)  # location as a string
+    customer_id = Column(Integer, primary_key=True) 
+    name = Column(String) 
+    location = Column(String)
 
+# Define the Customer model
+class Orders(Base):
+    __tablename__ = "orders"
+    
+    # Define the columns
+    customer_id = Column(Integer)
+    order_id = Column(Integer, primary_key=True)    
+    quantity = Column(Integer) 
+    order_price = Column(Float)
+    
 # Create a session to interact with the database
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 session = SessionLocal()
@@ -80,9 +89,21 @@ def fetch_customer_data():
         print(f"Error fetching customers: {e}")
         return {}
 
+# Function to fetch customer data from the database
+def fetch_order_data():
+    try:
+        # Query the customer table
+        order_data = session.query(Orders).all()
+        order_dict = {order.order_id: order for order in order_data}
+        return order_dict
+    except SQLAlchemyError as e:
+        print(f"Error fetching Orders: {e}")
+        return {}
+    
 # Initialize the inventory and customers data
 inventory = fetch_inventory_data()
 customers = fetch_customer_data()
+#orders = fetch_order_data()
 # Directory to your pdf files:
 DATA_PATH = "data/Company_FAQ.pdf"
 
@@ -233,21 +254,6 @@ def categorize_query(state: MessagesState) -> MessagesState:
     print(category)
     return {"query":state,"category": category}
 
-
-# def check_inventory(state: MessagesState) -> MessagesState:
-#     """Check if the requested item is in stock."""
-
-#     item_id = llm.with_structured_output(method='json_mode').invoke(f'Extract item_id from the following text in json format: {state}')['item_id']
-#     quantity = llm.with_structured_output(method='json_mode').invoke(f'Extract quantity from the following text in json format: {state}')['quantity']
-
-#     if not item_id or not quantity:
-#         return {"error": "Missing 'item_id' or 'quantity'."}
-
-#     if inventory.get(item_id, {}).get("stock", 0) >= quantity:
-#         print("IN STOCK")
-#         return {"order_status": "In Stock"}
-#     return {"query":state,"order_status": "Out of Stock"}
-
 def check_inventory(state: MessagesState) -> MessagesState:
     """Check if the requested item is in stock."""
 
@@ -264,29 +270,9 @@ def check_inventory(state: MessagesState) -> MessagesState:
     # Check if the item exists and if the stock is sufficient
     if item and item.stock >= quantity:
         print("IN STOCK")
-        return {"order_status": "In Stock"}
+        return {"order_status": "In Stock", "query": state}
     
     return {"order_status": "Out of Stock", "query": state}
-
-
-# def compute_shipping(state: MessagesState) -> MessagesState:
-#     """Calculate shipping costs."""
-#     item_id = llm.with_structured_output(method='json_mode').invoke(f'Extract item_id from the following text in json format: {state}')['item_id']
-#     quantity = llm.with_structured_output(method='json_mode').invoke(f'Extract quantity from the following text in json format: {state}')['quantity']
-#     customer_id = llm.with_structured_output(method='json_mode').invoke(f'Extract customer_id from the following text in json format: {state}')['customer_id']
-#     location = customers[customer_id]['location']
-
-
-#     if not item_id or not quantity or not location:
-#         return {"error": "Missing 'item_id', 'quantity', or 'location'."}
-
-#     weight_per_item = inventory[item_id]["weight"]
-#     total_weight = weight_per_item * quantity
-#     rates = {"local": 5, "domestic": 10, "international": 20}
-#     cost = total_weight * rates.get(location, 10)
-#     print(cost,location)
-
-#     return {"query":state,"cost": f"${cost:.2f}"}
 
 def compute_shipping(state: MessagesState) -> MessagesState:
     """Calculate shipping costs."""
@@ -294,15 +280,12 @@ def compute_shipping(state: MessagesState) -> MessagesState:
     # Extract item_id, quantity, and customer_id from the state using structured output
     item_id = llm.with_structured_output(method='json_mode').invoke(f'Extract item_id from the following text in json format: {state}')['item_id']
     quantity = llm.with_structured_output(method='json_mode').invoke(f'Extract quantity from the following text in json format: {state}')['quantity']
-    customer_id = llm.with_structured_output(method='json_mode').invoke(f'Extract customer_id from the following text in json format: {state}')['customer_id']
+    name = llm.with_structured_output(method='json_mode').invoke(f'Extract customer_name from the following text in json format: {state}')['customer_name']
     
     # Look up customer using the extracted customer_id
-    customer = customers.get(customer_id)
+    customer = session.query(Customer).filter_by(name=name).first()
 
-    if not customer:
-        return {"error": f"Customer with ID '{customer_id}' not found."}
-
-    location = customer.location  # Assume `location` is an attribute of the customer object
+    location = customer.location
 
     if not item_id or not quantity or not location:
         return {"error": "Missing 'item_id', 'quantity', or 'location'."}
@@ -319,20 +302,10 @@ def compute_shipping(state: MessagesState) -> MessagesState:
     # Shipping cost rates based on location
     rates = {"local": 5, "domestic": 10, "international": 20}
     cost = total_weight * rates.get(location, 10)  # Default rate is 10 if the location is not recognized
+    
     print(cost,location)
 
     return {"query": state, "cost": f"${cost:.2f}"}
-
-
-# def process_payment(state: State) -> State:
-#     """Simulate payment processing."""
-#     cost = llm.with_structured_output(method='json_mode').invoke(f'Extract cost from the following text in json format: {state}')
-
-#     if not cost:
-#         return {"error": "Missing 'amount'."}
-#     print(f"PAYMENT PROCESSED: {cost} and order successfully placed!")
-#     payment_outcome = random.choice(["Success", "Failed"])
-#     return {"payment_status": payment_outcome}
 
 def process_payment(state: State) -> State:
     """Simulate payment processing and update inventory."""
@@ -364,9 +337,11 @@ def process_payment(state: State) -> State:
         item.stock -= quantity
         session.commit()  # Commit the changes to the database
         print(f"Inventory updated: Reduced stock of item {item_id} by {quantity}. New stock: {item.stock}")
+        print(f"PAYMENT PROCESSED: {cost} and order successfully placed!")
 
         return {"payment_status": "Success", "order_status": "Order successfully placed!"}
 
+    print(f"PAYMENT FAILED: {cost} and order not placed!")
     return {"payment_status": "Failed", "order_status": "Payment failed, order not placed."}
 
 
@@ -387,7 +362,6 @@ def call_tools_2(state: MessagesState) -> Literal["tools_2", "end"]:
 
 def route_query_1(state: State) -> str:
     """Route the query based on its category."""
-    print(state)
     if state["category"] == "PlaceOrder":
         return "PlaceOrder"
     if state["category"] == "Assistant":
