@@ -110,10 +110,13 @@ orders = fetch_order_data()
 DATA_PATH = "data/Company_FAQ.pdf"
 
 PROMPT_TEMPLATE = """
-Answer the question based only on the following context:
-{context}
- - -
-Answer the question based on the above context: {question}
+Answer the following question based strictly on the context provided below:
+
+Context: {context}
+
+Question: {question}
+
+Answer:
 """
 
 # Add near the top of the file, after llm initialization
@@ -287,10 +290,10 @@ def compute_shipping(state: MessagesState) -> MessagesState:
     # Look up customer using the extracted customer_id
     customer = session.query(Customer).filter_by(name=name).first()
 
-    location = customer.location
-
     if not item_id or not quantity or not location:
         return {"error": "Missing 'item_id', 'quantity', or 'location'."}
+
+    location = customer.location
 
     # Fetch item from inventory using item_id
     item = session.query(Inventory).filter_by(item_id=item_id).first()
