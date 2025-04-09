@@ -4,7 +4,6 @@ import os
 import uuid 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import ToolNode
 from langgraph.graph import MessagesState
 from langgraph.graph import END
 import pandas as pd
@@ -19,93 +18,9 @@ from langchain_chroma import Chroma # Importing Chroma vector store from Langcha
 import shutil # Importing shutil module for high-level file operations
 from langchain_community.document_loaders import PyPDFLoader
 import chromadb
+from src.models import Inventory, Customer, Orders
+from src.database import get_session
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, VARCHAR
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import SQLAlchemyError
-
-# Database connection setup (replace with your credentials)
-DATABASE_URL = "mysql+mysqlconnector://root:@localhost:3306/orders"
-
-# Set up the SQLAlchemy engine
-engine = create_engine(DATABASE_URL)
-
-# # Base class for declarative models
-Base = declarative_base()
-
-# Define the Inventory model
-class Inventory(Base):
-    __tablename__ = "inventory"
-    
-    # Define the columns
-    item_id = Column(Integer, primary_key=True) 
-    category = Column(String)  
-    stock = Column(Integer) 
-    weight = Column(Float)  
-    price = Column(Float) 
-
-# Define the Customer model
-class Customer(Base):
-    __tablename__ = "customers"
-    
-    # Define the columns
-    customer_id = Column(Integer, primary_key=True) 
-    name = Column(String) 
-    location = Column(String)
-
-class Orders(Base):
-    __tablename__ = "orders"
-    
-    # Define the columns with appropriate types
-    customer_id = Column(VARCHAR(255))  # Assuming customer_id is a string (e.g., UUID or name)
-    order_id = Column(VARCHAR(255), primary_key=True)  # Unique order_id as an integer
-    order_name = Column(String)  # Assuming this is a string, use a length for VARCHAR
-    item_id = Column(VARCHAR(255))  # Assuming item_id is an integer
-    quantity = Column(Integer)  # Quantity of the item
-    order_price = Column(VARCHAR(255)) 
-    
-# Create a session to interact with the database
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-session = SessionLocal()
-
-# Function to fetch inventory data from the database
-def fetch_inventory_data():
-    try:
-        # Query the inventory table
-        inventory_data = session.query(Inventory).all()
-        inventory_dict = {item.item_id: item for item in inventory_data}
-        return inventory_dict
-    except SQLAlchemyError as e:
-        print(f"Error fetching inventory: {e}")
-        return {}
-
-# Function to fetch customer data from the database
-def fetch_customer_data():
-    try:
-        # Query the customer table
-        customer_data = session.query(Customer).all()
-        customer_dict = {customer.customer_id: customer for customer in customer_data}
-        return customer_dict
-    except SQLAlchemyError as e:
-        print(f"Error fetching customers: {e}")
-        return {}
-
-# Function to fetch customer data from the database
-def fetch_order_data():
-    try:
-        # Query the customer table
-        order_data = session.query(Orders).all()
-        order_dict = {order.order_id: order for order in order_data}
-        return order_dict
-    except SQLAlchemyError as e:
-        print(f"Error fetching Orders: {e}")
-        return {}
-    
-# Initialize the inventory and customers data
-inventory = fetch_inventory_data()
-customers = fetch_customer_data()
-orders = fetch_order_data()
 # Directory to your pdf files:
 DATA_PATH = "data/Company_FAQ.pdf"
 
@@ -268,14 +183,16 @@ def check_inventory(state: MessagesState) -> MessagesState:
 
     if not item_id or not quantity:
         return {"error": "Missing 'item_id' or 'quantity'."}
+    # Use session with context manager
 
-    # Query the inventory to get the item by item_id
-    item = session.query(Inventory).filter_by(item_id=item_id).first()
+    with next(get_session()) as session:
+        # Query the inventory to get the item by item_id
+        item = session.query(Inventory).filter_by(item_id=item_id).first()
 
-    # Check if the item exists and if the stock is sufficient
-    if item and item.stock >= quantity:
-        print("IN STOCK")
-        return {"order_status": "In Stock", "query": state}
+        # Check if the item exists and if the stock is sufficient
+        if item and item.stock >= quantity:
+            print("IN STOCK")
+            return {"order_status": "In Stock", "query": state}
     
     return {"order_status": "Out of Stock", "query": state}
 
@@ -286,29 +203,40 @@ def compute_shipping(state: MessagesState) -> MessagesState:
     item_id = llm.with_structured_output(method='json_mode').invoke(f'Extract item_id from the following text in json format: {state}')['item_id']
     quantity = llm.with_structured_output(method='json_mode').invoke(f'Extract quantity from the following text in json format: {state}')['quantity']
     name = llm.with_structured_output(method='json_mode').invoke(f'Extract customer_name from the following text in json format: {state}')['customer_name']
-    
-    # Look up customer using the extracted customer_id
-    customer = session.query(Customer).filter_by(name=name).first()
 
-    if not item_id or not quantity or not location:
-        return {"error": "Missing 'item_id', 'quantity', or 'location'."}
-
-    location = customer.location
-
-    # Fetch item from inventory using item_id
-    item = session.query(Inventory).filter_by(item_id=item_id).first()
+    if not item_id or not quantity or not name:
+        return {"error": "Missing 'item_id', 'quantity', or 'name'."}
     
-    if not item:
-        return {"error": f"Item with item_id {item_id} not found."}
+    # Use session with context manager
+    with next(get_session()) as session:
 
-    weight_per_item = item.weight
-    total_weight = weight_per_item * quantity
-    
-    # Shipping cost rates based on location
-    rates = {"local": 5, "domestic": 10, "international": 20}
-    cost = total_weight * rates.get(location, 10)  # Default rate is 10 if the location is not recognized
-    
-    print(cost,location)
+        # Look up customer using the extracted customer_name
+        customer = session.query(Customer).filter_by(name=name).first()
+
+        # Ensure customer was found
+        if not customer:
+            return {"error": f"Customer with name {name} not found."}
+        
+        # At this point, it's safe to access the location
+        location = customer.location        
+
+        # Fetch item from inventory using item_id
+        item = session.query(Inventory).filter_by(item_id=item_id).first()
+
+        if not item:
+            return {"error": f"Item with item_id {item_id} not found."}
+
+        weight_per_item = item.weight
+        total_weight = weight_per_item * quantity
+        
+        # Shipping cost rates based on location
+        rates = {"local": 5, "domestic": 10, "international": 20}
+        cost = total_weight * rates.get(location, 10)  # Default rate is 10 if the location is not recognized
+        
+        print(cost,location)
+
+    return {"query": state, "cost": f"${cost:.2f}"}
+
 
     return {"query": state, "cost": f"${cost:.2f}"}
 
@@ -325,50 +253,54 @@ def process_payment(state: State) -> State:
     # Ensure that item_id, quantity, and cost are provided
     if not item_id or not quantity or not cost:
         return {"error": "Missing 'item_id', 'quantity', or 'cost'."}
-
-    # Fetch the item from the inventory
-    item = session.query(Inventory).filter_by(item_id=item_id).first()
-
-    if not item:
-        return {"error": f"Item with item_id {item_id} not found."}
-
-    # Check if there is enough stock
-    if item.stock < quantity:
-        return {"error": f"Not enough stock for item {item_id}. Available stock: {item.stock}"}
     
-    # Fetch customer by name (assuming customer name is unique)
-    customer = session.query(Customer).filter_by(name=name).first()
+    # Use session with context manager
+    with next(get_session()) as session:
 
-    # Process payment (simulated)
-    payment_outcome = random.choice(["Success", "Failed"])
+        # Fetch the item from the inventory
+        item = session.query(Inventory).filter_by(item_id=item_id).first()
 
-    if payment_outcome == "Success":
-        # Update inventory: Reduce stock by the ordered quantity
-        item.stock -= quantity
-        session.commit()  # Commit the changes to the database
+        if not item:
+            return {"error": f"Item with item_id {item_id} not found."}
 
-        unique_order_id = str(uuid.uuid4()) 
-
-        # Create and insert the new order into the Orders table
-        new_order = Orders(
-            customer_id=customer.customer_id,  # Use the customer's ID
-            order_id= unique_order_id,
-            order_name=item.category,  # Order placed by the customer
-            item_id=item_id,
-            quantity=quantity,
-            order_price=cost  # Use the cost of the order
-        )
+        # Check if there is enough stock
+        if item.stock < quantity:
+            return {"error": f"Not enough stock for item {item_id}. Available stock: {item.stock}"}
         
-        # Add the new order to the session and commit
-        session.add(new_order)
-        session.commit()
+        # Fetch customer by name (assuming customer name is unique)
+        customer = session.query(Customer).filter_by(name=name).first()
 
-        print(f"Inventory updated: Reduced stock of item {item_id} by {quantity}. New stock: {item.stock}")
-        print(f"PAYMENT PROCESSED: {cost} and order successfully placed!")
+        # Process payment (simulated)
+        payment_outcome = random.choice(["Success", "Failed"])
 
-        return {"payment_status": "Success", "order_status": "Order successfully placed!"}
+        if payment_outcome == "Success":
+            # Update inventory: Reduce stock by the ordered quantity
+            item.stock -= quantity
+            session.commit()  # Commit the changes to the database
 
-    print(f"PAYMENT FAILED: {cost} and order not placed!")
+            unique_order_id = str(uuid.uuid4()) 
+
+            # Create and insert the new order into the Orders table
+            new_order = Orders(
+                customer_id=customer.customer_id,  # Use the customer's ID
+                order_id= unique_order_id,
+                order_name=item.category,  # Order placed by the customer
+                item_id=item_id,
+                quantity=quantity,
+                order_price=cost  # Use the cost of the order
+            )
+            
+            # Add the new order to the session and commit
+            session.add(new_order)
+            session.commit()
+
+            print(f"Inventory updated: Reduced stock of item {item_id} by {quantity}. New stock: {item.stock}")
+            print(f"PAYMENT PROCESSED: {cost} and order successfully placed!")
+
+            return {"payment_status": "Success", "order_status": "Order successfully placed!"}
+
+        print(f"PAYMENT FAILED: {cost} and order not placed!")
+
     return {"payment_status": "Failed", "order_status": "Payment failed, order not placed."}
 
 
