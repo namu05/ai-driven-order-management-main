@@ -10,3 +10,4 @@ ipython
 pypdf
 mysql-connector-python
 langsmith
+langserve
